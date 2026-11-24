@@ -749,7 +749,8 @@
       body.className = 'recruiter-card-body';
       const summary = document.createElement('section');
       summary.className = 'recruiter-summary';
-      const summaryLabel = addText(summary, 'label', '', 'Podsumowanie AI · do sprawdzenia i edycji');
+      const isPlaceholderSummary = application.aiInterview.summaryModel === 'demo-placeholder';
+      const summaryLabel = addText(summary, 'label', '', isPlaceholderSummary ? 'Podsumowanie — makieta miejsca na API' : 'Podsumowanie zapisane przy aplikacji');
       const summaryArea = document.createElement('textarea');
       summaryArea.rows = 4;
       summaryArea.maxLength = 1000;
@@ -757,7 +758,7 @@
       summaryArea.disabled = !application.aiInterview.summary;
       summaryArea.dataset.recruiterSummary = application.id;
       summaryLabel.append(summaryArea);
-      addText(summary, 'small', '', application.aiInterview.summary ? 'Wygenerowano przez AI. Zmiany zapisują się automatycznie tylko w tej przeglądarce.' : 'Podsumowanie nie zostało wygenerowane przez OpenAI.');
+      addText(summary, 'small', '', isPlaceholderSummary ? 'Przykładowy tekst demonstracyjny. W tej wersji nie wysyłamy odpowiedzi do OpenAI. Zmiany zapisują się tylko w tej przeglądarce.' : 'Zapisana treść z aplikacji. Zmiany zapisują się tylko w tej przeglądarce.');
       body.append(summary);
 
       const answers = document.createElement('div');
@@ -766,8 +767,11 @@
         const answer = document.createElement('section');
         answer.className = 'recruiter-answer';
         addText(answer, 'h3', '', `${index + 1}. ${entry.question}`);
-        if (entry.transcript) addText(answer, 'p', 'recruiter-transcript', `Oryginalna transkrypcja OpenAI: ${entry.transcript}`);
-        addText(answer, 'p', '', `Odpowiedź kandydata: ${entry.answer}`);
+        if (entry.transcript) addText(answer, 'p', 'recruiter-transcript', `Transkrypcja: ${entry.transcript}`);
+        else addText(answer, 'p', 'recruiter-transcript', 'Transkrypcja — miejsce na API. W tej makiecie nagranie nie jest przepisywane.');
+        if (entry.answer) addText(answer, 'p', '', `Odpowiedź tekstowa: ${entry.answer}`);
+        else if (entry.audioKey) addText(answer, 'p', '', 'Kandydat odpowiedział głosowo.');
+        else addText(answer, 'p', '', 'Nie dodano odpowiedzi.');
         if (entry.audioKey) {
           const status = addText(answer, 'p', 'recruiter-status', 'Otwieramy lokalne nagranie…');
           const player = document.createElement('audio');
@@ -1246,82 +1250,22 @@
     { question: 'Jak zaczynasz zadanie, którego zakres nie jest jeszcze jasny?', options: ['Dopytuję o cel', 'Sprawdzam dostępne dane', 'Proponuję mały pierwszy krok', 'Uzgadniam podejście z zespołem'] },
     { question: 'Co pomaga Ci najlepiej wykonać nowy projekt?', options: ['Jasny zakres odpowiedzialności', 'Regularne krótkie rozmowy', 'Wspólne planowanie', 'Czas na samodzielne przygotowanie'] }
   ];
-  const getInterviewOffer = flow => getJobs().find(job => job.id === flow.jobId) || null;
-  const interviewOfferContext = job => ({
-    title: job.title,
-    company: job.company,
-    summary: job.summary,
-    responsibility: job.responsibility,
-    mandate: job.mandate,
-    team: job.team,
-    process: job.process
-  });
-  const postInterviewJson = async (path, payload) => {
-    let response;
-    try {
-      response = await fetch(path, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-    } catch {
-      throw new Error('Nie udało się połączyć z lokalną usługą AI. Uruchom aplikację przez npm run dev i spróbuj ponownie.');
-    }
-    const result = await response.json().catch(() => ({}));
-    if (response.ok) return result;
-    if (result.error === 'openai_not_configured') {
-      throw new Error('Brakuje OPENAI_API_KEY. Dodaj klucz do lokalnego pliku .env.local i uruchom ponownie serwer.');
-    }
-    if (result.error === 'openai_auth_failed') {
-      throw new Error('Klucz OpenAI jest nieprawidłowy albo nie ma dostępu do tej usługi. Sprawdź .env.local.');
-    }
-    if (result.error === 'openai_rate_limited') {
-      throw new Error('OpenAI chwilowo ogranicza liczbę zapytań. Odczekaj chwilę i spróbuj ponownie.');
-    }
-    if (response.status === 413) throw new Error('Nagranie przekracza limit 25 MB. Nagraj krótszą odpowiedź.');
-    if (response.status === 415) throw new Error('Format nagrania nie jest obsługiwany. Wpisz odpowiedź tekstowo.');
-    throw new Error('Usługa OpenAI nie zwróciła odpowiedzi. Spróbuj ponownie albo złóż zwykłą aplikację.');
-  };
+  const DEMO_INTERVIEW_QUESTIONS = [
+    'Opowiedz o projekcie z Twojego CV, który najlepiej pasuje do tej oferty. Jaki był Twój wkład?',
+    'Której umiejętności lub narzędzia użyłaś albo użyłeś w podobnym zadaniu? Jaką decyzję wtedy podjęłaś albo podjąłeś?',
+    'Jaki efekt udało Ci się osiągnąć i po czym poznajesz, że Twoje rozwiązanie zadziałało?'
+  ];
   const generateInterviewQuestions = async flow => {
     const profile = profiles.find(item => item.id === flow.profileId);
-    const job = getInterviewOffer(flow);
+    const job = getJobs().find(item => item.id === flow.jobId);
     if (!profile || !job) throw new Error('Nie znaleziono profilu lub wybranej oferty. Wróć do aplikacji i spróbuj ponownie.');
-    const cv = profile.cv;
-    const result = await postInterviewJson('/api/ai-interview/questions', {
-      context: {
-        cv: {
-          headline: cv.headline,
-          about: cv.about,
-          experience: cv.experience,
-          projects: cv.projects,
-          skills: cv.skills,
-          tools: cv.tools
-        },
-        offer: interviewOfferContext(job)
-      }
-    });
-    if (!Array.isArray(result.questions) || result.questions.length !== 3 || result.questions.some(question => typeof question !== 'string' || !question.trim())) {
-      throw new Error('Nie udało się przygotować dokładnie trzech pytań. Spróbuj ponownie.');
-    }
-    return result.questions.map(question => question.trim());
+    return DEMO_INTERVIEW_QUESTIONS.slice();
   };
   const generateInterviewSummary = async flow => {
-    const job = getInterviewOffer(flow);
-    const answers = flow.aiQuestions.map((question, index) => ({
-      question,
-      answer: flow.aiAnswers[index].answer.trim()
-    }));
-    if (!job || answers.length !== 3 || answers.some(item => !item.answer)) {
+    if (flow.aiQuestions.length !== 3 || flow.aiAnswers.some(answer => !answer.answer.trim() && !answer.audioBlob)) {
       throw new Error('Uzupełnij odpowiedzi na wszystkie trzy pytania.');
     }
-    const result = await postInterviewJson('/api/ai-interview/summary', {
-      offer: interviewOfferContext(job),
-      answers
-    });
-    if (typeof result.summary !== 'string' || !result.summary.trim()) {
-      throw new Error('Nie udało się przygotować podsumowania. Spróbuj ponownie.');
-    }
-    return result.summary.trim();
+    return 'Miejsce na krótkie podsumowanie odpowiedzi po podłączeniu API. W tej makiecie podsumowanie nie jest generowane.';
   };
   const formatCountdown = seconds => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
   const stopApplicationTimer = () => {
@@ -1335,8 +1279,9 @@
       applicationFlow.questionExpired = false;
       applicationFlow.advanceAfterTranscription = false;
       applicationFlow.timerEndsAt = Date.now() + 180_000;
+      if (applicationDialog) applicationDialog.scrollTop = 0;
       renderApplicationFlow();
-      applicationFlowRoot?.querySelector('[data-ai-answer]')?.focus();
+      applicationFlowRoot?.querySelector('.application-flow-title')?.focus();
       startApplicationTimer();
       return;
     }
@@ -1344,40 +1289,9 @@
     applicationFlow.stage = 'ai-review';
     applicationFlow.questionExpired = false;
     applicationFlow.advanceAfterTranscription = false;
+    if (applicationDialog) applicationDialog.scrollTop = 0;
     renderApplicationFlow();
-    applicationFlowRoot?.querySelector('[data-ai-review-answer]')?.focus();
-  };
-  const transcribeInterviewAnswer = async (flow, index, blob) => {
-    const answer = flow.aiAnswers[index];
-    try {
-      const response = await fetch('/api/ai-interview/transcribe', {
-        method: 'POST',
-        headers: { 'content-type': blob.type || 'audio/webm' },
-        body: blob
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        if (result.error === 'openai_not_configured') throw new Error('Brakuje OPENAI_API_KEY. Dodaj go do .env.local i uruchom ponownie serwer.');
-        if (result.error === 'openai_auth_failed') throw new Error('Klucz OpenAI jest nieprawidłowy albo nie ma dostępu do transkrypcji. Sprawdź .env.local.');
-        if (result.error === 'openai_rate_limited') throw new Error('OpenAI chwilowo ogranicza liczbę zapytań. Odczekaj chwilę i spróbuj ponownie.');
-        throw new Error('Nie udało się utworzyć transkrypcji. Możesz wpisać odpowiedź ręcznie albo nagrać ją ponownie.');
-      }
-      if (applicationFlow !== flow) return;
-      answer.transcript = typeof result.transcript === 'string' ? result.transcript : '';
-      answer.answer = answer.transcript;
-      answer.transcriptionError = answer.transcript ? '' : 'Transkrypcja jest pusta. Wpisz odpowiedź albo spróbuj nagrać ją ponownie.';
-    } catch (error) {
-      if (applicationFlow !== flow) return;
-      answer.transcriptionError = error instanceof Error ? error.message : 'Nie udało się utworzyć transkrypcji.';
-    } finally {
-      answer.transcribing = false;
-      if (applicationFlow === flow) {
-        const shouldAdvance = flow.advanceAfterTranscription;
-        renderApplicationFlow();
-        if (shouldAdvance) advanceInterviewQuestion();
-        else applicationFlowRoot?.querySelector('[data-ai-answer]')?.focus();
-      }
-    }
+    applicationFlowRoot?.querySelector('.application-flow-title')?.focus();
   };
   const startInterviewRecording = async () => {
     const flow = applicationFlow;
@@ -1424,10 +1338,14 @@
           return;
         }
         answer.audioBlob = blob;
-        answer.transcribing = true;
+        answer.transcribing = false;
         answer.transcriptionError = '';
-        if (applicationFlow === flow) renderApplicationFlow();
-        transcribeInterviewAnswer(flow, index, blob);
+        if (applicationFlow === flow) {
+          const shouldAdvance = flow.advanceAfterTranscription;
+          renderApplicationFlow();
+          if (shouldAdvance) advanceInterviewQuestion();
+          else applicationFlowRoot?.querySelector('[data-ai-answer]')?.focus();
+        }
       }, { once: true });
       recorder.start(1000);
       renderApplicationFlow();
@@ -1608,26 +1526,26 @@
     checkbox.checked = Boolean(applicationFlow.aiInterviewConsent);
     checkbox.dataset.aiOptin = '';
     const copy = document.createElement('span');
-    addText(copy, 'strong', '', 'Tak, chcę odpowiedzieć na 3 pytania wygenerowane przez AI');
+    addText(copy, 'strong', '', 'Tak, chcę odpowiedzieć na 3 pytania w makiecie AI');
     addText(copy, 'small', '', 'Odpowiem tekstem albo głosowo. Na każdą odpowiedź mam 3 minuty.');
     label.append(checkbox, copy);
     panel.append(label);
-    addText(panel, 'p', 'application-ai-disclosure', 'Po wybraniu tej opcji do OpenAI wyślemy opis, doświadczenie, projekty i umiejętności z demonstracyjnego profilu oraz treść oferty, aby przygotować pytania. Nagrania wyślemy do transkrypcji, a odpowiedzi do krótkiego podsumowania dla rekrutera. Załączony PDF nie jest odczytywany.');
-    addText(panel, 'p', 'application-ai-disclosure', 'Pytania, odpowiedzi, transkrypcje i nagrania są widoczne tylko w tej przeglądarce. Konto rekrutera jest demonstracyjne; zgłoszenie nie trafia do pracodawcy. Po wysłaniu zapytania do OpenAI nie można cofnąć tego przetwarzania.');
+    addText(panel, 'p', 'application-ai-disclosure', 'To makieta: pytania są przykładowe, a przeglądarka nie łączy się z OpenAI. Opis profilu, doświadczenie, projekty, umiejętności, odpowiedzi i nagrania pozostają w tej przeglądarce. Załączony PDF nie jest odczytywany.');
+    addText(panel, 'p', 'application-ai-disclosure', 'Konto rekrutera jest demonstracyjne; zgłoszenie nie trafia do pracodawcy. Pytania, transkrypcje i podsumowanie mają w tej wersji charakter przykładowy.');
     applicationFlowRoot.append(panel);
     addFlowError();
     const actions = addFlowActions();
     makeFlowButton(actions, 'Wstecz', 'is-secondary', 'applicationBack', 'questions');
     makeFlowButton(actions, 'Złóż aplikację bez AI', 'is-secondary', 'aiChoiceSubmit');
-    const generate = makeFlowButton(actions, 'Wygeneruj 3 pytania AI', 'is-primary', 'aiGenerateQuestions');
+    const generate = makeFlowButton(actions, 'Wygeneruj 3 pytania', 'is-primary', 'aiGenerateQuestions');
     generate.disabled = !applicationFlow.aiInterviewConsent || applicationFlow.generatingQuestions;
-    if (applicationFlow.generatingQuestions) generate.textContent = 'Generujemy pytania…';
+    if (applicationFlow.generatingQuestions) generate.textContent = 'Przygotowujemy makietę…';
   };
   const renderAiExpansion = () => {
     const index = applicationFlow.aiQuestionIndex;
     const answer = applicationFlow.aiAnswers[index];
     const question = applicationFlow.aiQuestions[index];
-    addFlowHeader(3, 'Odpowiedz na pytania o Twoje doświadczenie', 'Możesz mówić albo pisać. Każde pytanie ma osobny limit 3 minut.');
+    addFlowHeader(3, 'Odpowiedz na 3 pytania', 'Na każde masz 3 minuty. Możesz pisać lub nagrać głos.');
     renderFlowStepPills(3);
     const response = document.createElement('section');
     response.className = 'application-timed-response';
@@ -1636,6 +1554,7 @@
     questionPosition.setAttribute('aria-live', 'polite');
     const questionHeading = addText(response, 'h3', 'application-interview-question', question);
     questionHeading.id = 'application-current-question';
+    addText(response, 'p', 'application-ai-prototype-note', 'Pytanie przykładowe · tutaj później pojawi się treść z API.');
     const timerLine = document.createElement('div');
     timerLine.className = 'application-timer-line';
     addText(timerLine, 'span', '', 'Pozostały czas');
@@ -1650,18 +1569,18 @@
       recordButton.title = 'Ta przeglądarka nie udostępnia nagrywania. Możesz wpisać odpowiedź.';
     }
     if (answer.audioBlob) addText(response, 'p', 'application-recording-status', 'Nagranie jest gotowe. Po wysłaniu aplikacji będzie dostępne w demonstracyjnym widoku rekrutera.');
-    if (answer.transcribing) addText(response, 'p', 'application-recording-status', 'Tworzymy transkrypcję nagrania…');
+    if (answer.transcribing) addText(response, 'p', 'application-recording-status', 'Zapisujemy nagranie w tej przeglądarce…');
     if (answer.transcriptionError) addText(response, 'p', 'application-recording-error', answer.transcriptionError);
-    const prompt = addText(response, 'label', 'application-response-label', answer.transcript ? 'Transkrypcja nagrania — możesz ją poprawić przed wysłaniem' : 'Odpowiedź tekstowa');
+    const prompt = addText(response, 'label', 'application-response-label', answer.transcript ? 'Transkrypcja nagrania — możesz ją poprawić przed wysłaniem' : 'Twoja odpowiedź');
     const textarea = document.createElement('textarea');
     textarea.rows = 5;
     textarea.maxLength = 4000;
-    textarea.placeholder = 'Wpisz odpowiedź albo nagraj ją przyciskiem powyżej.';
+    textarea.placeholder = `Wpisz odpowiedź do pytania ${index + 1} albo nagraj ją powyżej.`;
     textarea.value = answer.answer;
     textarea.disabled = answer.recording || answer.transcribing || applicationFlow.questionExpired;
     textarea.dataset.aiAnswer = String(index);
     prompt.append(textarea);
-    addText(response, 'p', 'application-response-hint', applicationFlow.questionExpired ? 'Limit czasu minął. Możesz jeszcze sprawdzić i poprawić transkrypcję w podsumowaniu odpowiedzi.' : 'Po upływie 3 minut nagranie zostanie zatrzymane i przejdziesz do kolejnego pytania.');
+    addText(response, 'p', 'application-response-hint', applicationFlow.questionExpired ? 'Limit czasu minął. Możesz sprawdzić i poprawić odpowiedź w następnym kroku.' : 'Po upływie 3 minut nagranie zostanie zatrzymane i przejdziesz do kolejnego pytania.');
     applicationFlowRoot.append(response);
     addFlowError();
     const actions = addFlowActions();
@@ -1669,7 +1588,7 @@
     save.disabled = answer.recording || answer.transcribing || applicationFlow.questionExpired;
   };
   const renderAiReview = () => {
-    addFlowHeader(3, 'Sprawdź odpowiedzi przed wysłaniem', 'Możesz poprawić tekst i transkrypcje. Rekruter zobaczy oryginalną transkrypcję, Twoją wersję odpowiedzi oraz krótkie podsumowanie AI.');
+    addFlowHeader(3, 'Sprawdź odpowiedzi przed wysłaniem', 'Możesz poprawić tekst. Rekruter zobaczy Twoje odpowiedzi, nagrania i przykładowe miejsce na podsumowanie oraz transkrypcję.');
     renderFlowStepPills(3);
     const list = document.createElement('div');
     list.className = 'application-interview-review-list';
@@ -1683,28 +1602,29 @@
       const textarea = document.createElement('textarea');
       textarea.rows = 4;
       textarea.maxLength = 4000;
-      textarea.required = true;
+      textarea.required = !answer.audioBlob;
       textarea.disabled = applicationFlow.submitting;
       textarea.value = answer.answer;
+      textarea.placeholder = answer.audioBlob ? 'Możesz dopisać odpowiedź tekstową albo zostawić samo nagranie.' : 'Wpisz odpowiedź do tego pytania.';
       textarea.dataset.aiReviewAnswer = String(index);
       label.append(textarea);
       if (answer.transcript) {
         const details = document.createElement('details');
-        addText(details, 'summary', '', 'Pokaż oryginalną transkrypcję OpenAI');
+        addText(details, 'summary', '', 'Pokaż transkrypcję');
         addText(details, 'p', 'application-original-transcript', answer.transcript);
         item.append(details);
       }
-      if (answer.audioBlob) addText(item, 'p', 'application-recording-status', 'Do odpowiedzi dołączono nagranie głosowe.');
+      if (answer.audioBlob) addText(item, 'p', 'application-recording-status', 'Do odpowiedzi dołączono lokalne nagranie głosowe. Transkrypcja nie jest generowana w tej makiecie.');
       list.append(item);
     });
     applicationFlowRoot.append(list);
-    addText(applicationFlowRoot, 'p', 'application-ai-disclosure', 'Po kliknięciu „Złóż aplikację” odpowiedzi zostaną zapisane w tej przeglądarce, a OpenAI przygotuje krótkie podsumowanie dla rekrutera. Podsumowanie nie ocenia kandydata ani nie rekomenduje decyzji.');
+    addText(applicationFlowRoot, 'p', 'application-ai-disclosure', 'Odpowiedzi i nagrania zapiszą się tylko w tej przeglądarce. Podsumowanie poniżej jest przykładowym placeholderem; w tej makiecie nic nie jest wysyłane do OpenAI ani do pracodawcy.');
     const error = addFlowError();
     if (applicationFlow.summaryFailure) error.textContent = `${applicationFlow.summaryFailure} Możesz spróbować ponownie albo wysłać aplikację bez podsumowania AI.`;
     if (applicationFlow.audioSaveFailure) error.textContent = 'Nie udało się zapisać nagrań w tej przeglądarce. Spróbuj ponownie albo wyślij odpowiedzi bez nagrań.';
     const actions = addFlowActions();
     makeFlowButton(actions, 'Anuluj', 'is-secondary', 'closeApplication');
-    const submit = makeFlowButton(actions, applicationFlow.submitting ? 'Zapisujemy aplikację…' : 'Złóż aplikację i wygeneruj podsumowanie', 'is-primary', 'aiSubmit');
+    const submit = makeFlowButton(actions, applicationFlow.submitting ? 'Zapisujemy aplikację…' : 'Złóż aplikację', 'is-primary', 'aiSubmit');
     submit.disabled = applicationFlow.submitting;
     if (applicationFlow.summaryFailure) makeFlowButton(actions, 'Złóż bez podsumowania AI', 'is-secondary', 'aiSubmitWithoutSummary');
     if (applicationFlow.audioSaveFailure) makeFlowButton(actions, 'Złóż bez nagrań', 'is-secondary', 'aiSubmitWithoutAudio');
@@ -1719,7 +1639,7 @@
     confirmation.className = 'application-success-panel';
     addText(confirmation, 'strong', '', 'Aplikacja jest zapisana na Twoim profilu.');
     addText(confirmation, 'p', '', applicationFlow.aiInterviewUsed
-      ? 'To wersja demonstracyjna: zgłoszenie, odpowiedzi, transkrypcje i nagrania są zapisane tylko w tej przeglądarce. Za zgodą wysłano kontekst i odpowiedzi do OpenAI; nie wysłano ich do pracodawcy.'
+      ? 'To wersja demonstracyjna: zgłoszenie, odpowiedzi i nagrania są zapisane tylko w tej przeglądarce. Nic nie wysłano do OpenAI ani do pracodawcy.'
       : 'To wersja demonstracyjna: zgłoszenie, odpowiedzi i status są zapisane tylko w tej przeglądarce. Nie wysłano ich do pracodawcy.');
     applicationFlowRoot.append(confirmation);
     const actions = addFlowActions();
@@ -1727,6 +1647,7 @@
   };
   const renderApplicationFlow = () => {
     if (!applicationFlowRoot || !applicationFlow) return;
+    applicationFlowRoot.dataset.applicationStage = applicationFlow.stage;
     applicationFlowRoot.replaceChildren();
     const profile = getCurrentProfile();
     if (!profile) return;
@@ -1802,7 +1723,7 @@
       return;
     }
     const aiInterviewUsed = Boolean(flow.aiInterviewConsent && flow.aiQuestions.length === 3);
-    if (aiInterviewUsed && !options?.withoutAudio && flow.aiAnswers.some(answer => !answer.answer.trim())) {
+    if (aiInterviewUsed && !options?.withoutAudio && flow.aiAnswers.some(answer => !answer.answer.trim() && !answer.audioBlob)) {
       const error = applicationFlowRoot?.querySelector('[data-application-error]');
       if (error) error.textContent = 'Uzupełnij odpowiedzi na wszystkie trzy pytania przed wysłaniem.';
       applicationFlowRoot?.querySelector('[data-ai-review-answer]:invalid')?.focus();
@@ -1878,7 +1799,7 @@
         answers: interviewAnswers,
         summary,
         summaryGeneratedAt: summary ? new Date().toISOString() : null,
-        summaryModel: summary ? 'gpt-5-mini' : null
+        summaryModel: summary ? 'demo-placeholder' : null
       } : null
     };
     applications.push(item);
@@ -2010,8 +1931,9 @@
         flow.questionExpired = false;
         flow.stage = 'ai';
         flow.generatingQuestions = false;
+        if (applicationDialog) applicationDialog.scrollTop = 0;
         renderApplicationFlow();
-        applicationFlowRoot?.querySelector('[data-ai-answer]')?.focus();
+        applicationFlowRoot?.querySelector('.application-flow-title')?.focus();
         startApplicationTimer();
       }).catch(error => {
         if (applicationFlow !== flow) return;
@@ -2038,7 +1960,7 @@
     }
     if (event.target.closest('[data-ai-submit]')) {
       if (!applicationFlow || applicationFlow.submitting) return;
-      const missing = applicationFlow.aiAnswers.findIndex(answer => !answer.answer.trim());
+      const missing = applicationFlow.aiAnswers.findIndex(answer => !answer.answer.trim() && !answer.audioBlob);
       if (missing !== -1) {
         const error = applicationFlowRoot?.querySelector('[data-application-error]');
         if (error) error.textContent = 'Uzupełnij odpowiedzi na wszystkie trzy pytania.';

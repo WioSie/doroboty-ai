@@ -148,6 +148,7 @@
 .application-ai-disclosure,
 .application-demo-note { color: var(--ai-muted) !important; font-size: 13px !important; line-height: 1.65 !important; }
 .application-ai-disclosure { margin: 13px 0 0 !important; }
+.application-ai-prototype-note { margin: 0 0 14px; padding: 9px 12px; border: 1px solid rgba(86, 217, 255, .22); border-radius: 10px; background: rgba(86, 217, 255, .07); color: var(--ai-ice); font-size: 12px; line-height: 1.5; }
 
 .application-question-position { margin: 0 0 7px; color: var(--ai-cyan); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .application-interview-question { margin: 0 0 17px; color: var(--ai-ink); font-size: 22px; font-weight: 680; letter-spacing: -.025em; line-height: 1.3; }

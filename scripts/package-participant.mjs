@@ -32,7 +32,6 @@ const entries = [
   ".prettierrc.json",
   ".prettierignore",
   ".gitignore",
-  ".env.example",
   "tokens.css",
   "GUI.md",
   "components.json",

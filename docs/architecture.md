@@ -8,7 +8,7 @@ JSON marketplace/person fixtures → initialState → PrototypeProvider → feat
 
 Candidate source notes, generated draft and approved application are distinct fields. Submission snapshots CV, candidate name, job title, scenario score and summary. Employer stage events are appended, with private-in-the-UI notes. Profile/job edits do not rewrite submitted records.
 
-The static candidate application has a separate optional AI interview. Vite development/preview middleware binds to the loopback request and exposes `/api/ai-interview/questions`, `/transcribe` and `/summary`; it reads `OPENAI_API_KEY` server-side from `.env.local` and sends data to OpenAI only after the candidate opts in. The built static output does not include these endpoints. Structured CV context, answers and audio are synthetic demo data; the attached PDF is not read. Interview text is stored in the static demo's localStorage and audio in IndexedDB for the same browser only.
+The static candidate application has a separate optional AI interview mockup. It shows three fixed sample questions, accepts timed text answers and locally recorded audio, and displays explicit placeholders for future question, transcription and summary APIs. It does not make provider or server requests. The attached PDF is not read. Interview text is stored in the static demo's localStorage and audio in IndexedDB for the same browser only.
 
 The React scenario uses one versioned localStorage key. Import validates schema/version, unique IDs, cross-references and stage history before replacing state. Unreadable/incompatible saves are protected against automatic overwrite; settings can download the original raw save, import a valid file or explicitly reset. Failed/quota-limited persistence leaves the in-memory app usable and offers export. Import/export is capped at 2 MB; no binary CV storage. Static interview recordings are separate from React scenario exports.
 
@@ -24,4 +24,4 @@ The baseline historical CSV and JSON are separate from interactive state. Future
 
 ## Checks
 
-npm run check and ./scripts/verify run formatting, design-system reference integrity/example checks, lint, types, unit tests, build and Playwright against the static preview. Playwright checks external requests, complete workflows, error/recovery behavior, keyboard controls and mobile layout. No test starts system services. `npm run dev` starts Vite, including the optional local OpenAI middleware; actual provider requests require the developer's local key and explicit candidate opt-in.
+npm run check and ./scripts/verify run formatting, design-system reference integrity/example checks, lint, types, unit tests, build and Playwright against the static preview. Playwright checks external requests, complete workflows, error/recovery behavior, keyboard controls and mobile layout. No test starts system services. `npm run dev` starts Vite for local prototype development; the interview mockup makes no external requests.
